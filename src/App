@@ -1,0 +1,159 @@
+
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import { HashRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { User, UserRole, SubscriptionStatus } from './types';
+import { storage } from './storage';
+import LandingPage from './components/LandingPage';
+import ClientDashboard from './components/ClientDashboard';
+import AdminDashboard from './components/AdminDashboard';
+import { LogOut, User as UserIcon, Shield } from 'lucide-react';
+
+interface AuthContextType {
+  user: User | null;
+  login: (id: string, email?: string, password?: string) => Promise<boolean>;
+  logout: () => void;
+  refreshUser: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
+  return context;
+};
+
+const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(storage.getSession());
+
+  const login = async (id: string, email?: string, password?: string): Promise<boolean> => {
+    if (id === 'SO3DA2007') {
+      const admin: User = {
+        id: 'SO3DA2007',
+        email: 'admin@dreambody.fit',
+        name: 'Head Admin',
+        role: UserRole.ADMIN,
+        biometrics: { height: 0, weight: 0, age: 0, gender: 'NA', goal: 'Maintain Platform' },
+        dietaryProfile: { allergies: [], forbiddenFoods: [], dislikes: [] },
+        subscriptionStatus: SubscriptionStatus.ACTIVE,
+        createdAt: new Date().toISOString()
+      };
+      setUser(admin);
+      storage.setSession(admin);
+      return true;
+    }
+
+    const users = storage.getUsers();
+    const foundUser = users.find(u => u.id === id || (u.email === email && u.password === password));
+    
+    if (foundUser) {
+      setUser(foundUser);
+      storage.setSession(foundUser);
+      return true;
+    }
+    return false;
+  };
+
+  const logout = () => {
+    setUser(null);
+    storage.setSession(null);
+  };
+
+  const refreshUser = () => {
+    const currentSession = storage.getSession();
+    if (currentSession) {
+      const latestUser = storage.getUsers().find(u => u.id === currentSession.id) || currentSession;
+      setUser(latestUser);
+      storage.setSession(latestUser);
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, refreshUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Define interface for ProtectedRoute props to ensure children are recognized
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+  role?: UserRole;
+}
+
+// Typing component with React.FC ensures that JSX children are recognized correctly by the TypeScript compiler
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, role }) => {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/" replace />;
+  if (role && user.role !== role) return <Navigate to="/" replace />;
+  return <>{children}</>;
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <HashRouter>
+        <div className="min-h-screen flex flex-col">
+          <header className="glass sticky top-0 z-50 px-6 py-4 flex justify-between items-center border-b border-slate-800">
+            <Link to="/" className="text-2xl font-black tracking-tighter text-cyan-500 italic">
+              DREAM BODY <span className="text-white">FITNESS</span>
+            </Link>
+            
+            <AuthStatus />
+          </header>
+
+          <main className="flex-grow">
+            <Routes>
+              <Route path="/" element={<LandingPage />} />
+              <Route 
+                path="/dashboard" 
+                element={
+                  <ProtectedRoute role={UserRole.CLIENT}>
+                    <ClientDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/admin" 
+                element={
+                  <ProtectedRoute role={UserRole.ADMIN}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+          
+          <footer className="py-8 px-6 text-center text-slate-500 text-sm border-t border-slate-900 bg-slate-950">
+            &copy; {new Date().getFullYear()} Dream Body Fitness. Elite Performance Engineering.
+          </footer>
+        </div>
+      </HashRouter>
+    </AuthProvider>
+  );
+};
+
+const AuthStatus = () => {
+  const { user, logout } = useAuth();
+  if (!user) return null;
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="hidden md:flex flex-col items-end">
+        <span className="text-xs font-bold text-cyan-500 tracking-widest uppercase">
+          {user.role} ID: {user.id}
+        </span>
+        <span className="text-sm text-slate-300">{user.name}</span>
+      </div>
+      <button 
+        onClick={logout}
+        className="p-2 rounded-full bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400 transition-all border border-slate-700"
+      >
+        <LogOut size={18} />
+      </button>
+    </div>
+  );
+};
+
+export default App;
